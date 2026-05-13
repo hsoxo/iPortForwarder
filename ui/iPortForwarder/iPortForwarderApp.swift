@@ -17,7 +17,7 @@ struct iPortForwarderApp: App {
     }
 
     var body: some Scene {
-        WindowGroup {
+        WindowGroup("iPortForwarder", id: "main") {
             ContentView()
                 .environmentObject(state)
         }
@@ -26,47 +26,55 @@ struct iPortForwarderApp: App {
         }
 
         MenuBarExtra("iPortForwarder", systemImage: "arrow.left.arrow.right.circle") {
-            if state.rules.isEmpty {
-                Text("No forwarding rules")
-            } else {
-                ForEach(state.rules) { rule in
-                    Toggle(isOn: Binding(
-                        get: { rule.isEnabled },
-                        set: { state.setRule(rule, enabled: $0) }
-                    )) {
-                        Text(rule.menuTitle)
-                    }
+            MenuBarContentView()
+                .environmentObject(state)
+        }
+
+        WindowGroup("Settings", id: "settings") {
+            SettingsView()
+                .environmentObject(state)
+        }
+    }
+}
+
+struct MenuBarContentView: View {
+    @EnvironmentObject var state: GlobalState
+    @Environment(\.openWindow) private var openWindow
+
+    var body: some View {
+        if state.rules.isEmpty {
+            Text("No forwarding rules")
+        } else {
+            ForEach(state.rules) { rule in
+                Toggle(isOn: Binding(
+                    get: { rule.isEnabled },
+                    set: { state.setRule(rule, enabled: $0) }
+                )) {
+                    Text(rule.menuTitle)
                 }
-            }
-
-            Divider()
-
-            Button("Add New Rule") {
-                NSApplication.shared.activate(ignoringOtherApps: true)
-                NSApplication.shared.windows.first?.makeKeyAndOrderFront(nil)
-                withAnimation {
-                    state.isAddingNewItem = true
-                }
-            }
-
-            Button("Settings...") {
-                NSApplication.shared.activate(ignoringOtherApps: true)
-                if !NSApplication.shared.sendAction(Selector(("showPreferencesWindow:")), to: nil, from: nil) {
-                    NSApplication.shared.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
-                }
-            }
-
-            Divider()
-
-            Button("Quit iPortForwarder") {
-                state.shutdown()
-                NSApplication.shared.terminate(nil)
             }
         }
 
-        Settings {
-            SettingsView()
-                .environmentObject(state)
+        Divider()
+
+        Button("Add New Rule") {
+            withAnimation {
+                state.isAddingNewItem = true
+            }
+            openWindow(id: "main")
+            NSApplication.shared.activate(ignoringOtherApps: true)
+        }
+
+        Button("Settings...") {
+            openWindow(id: "settings")
+            NSApplication.shared.activate(ignoringOtherApps: true)
+        }
+
+        Divider()
+
+        Button("Quit iPortForwarder") {
+            state.shutdown()
+            NSApplication.shared.terminate(nil)
         }
     }
 }
