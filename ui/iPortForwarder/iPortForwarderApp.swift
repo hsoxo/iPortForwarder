@@ -44,42 +44,145 @@ struct MenuBarContentView: View {
     @Environment(\.openWindow) private var openWindow
 
     var body: some View {
-        if state.rules.isEmpty {
-            Text("No forwarding rules")
-        } else {
-            ForEach(state.rules) { rule in
-                Toggle(isOn: Binding(
-                    get: { rule.isEnabled },
-                    set: { state.setRule(rule, enabled: $0) }
-                )) {
-                    Text(rule.menuTitle)
+        VStack(alignment: .leading, spacing: 0) {
+            header
+
+            Divider()
+                .padding(.top, 10)
+
+            if state.rules.isEmpty {
+                emptyState
+            } else {
+                ScrollView {
+                    VStack(spacing: 6) {
+                        ForEach(state.rules) { rule in
+                            MenuBarRuleRow(rule: rule)
+                                .environmentObject(state)
+                        }
+                    }
+                    .padding(.vertical, 10)
                 }
+                .frame(maxHeight: 260)
             }
-        }
 
-        Divider()
+            Divider()
 
-        Button("Add New Rule") {
-            withAnimation {
-                state.selectedSettingsTab = .rules
-                state.isAddingNewItem = true
+            HStack(spacing: 8) {
+                Button {
+                    withAnimation {
+                        state.selectedSettingsTab = .rules
+                        state.isAddingNewItem = true
+                    }
+                    openWindow(id: "settings")
+                    NSApplication.shared.activate(ignoringOtherApps: true)
+                } label: {
+                    Label("Add", systemImage: "plus")
+                }
+
+                Spacer()
+
+                Button {
+                    state.selectedSettingsTab = .general
+                    openWindow(id: "settings")
+                    NSApplication.shared.activate(ignoringOtherApps: true)
+                } label: {
+                    Label("Settings", systemImage: "gearshape")
+                        .labelStyle(.iconOnly)
+                }
+                .help("Settings")
+
+                Button {
+                    state.shutdown()
+                    NSApplication.shared.terminate(nil)
+                } label: {
+                    Label("Quit", systemImage: "power")
+                        .labelStyle(.iconOnly)
+                }
+                .help("Quit iPortForwarder")
             }
-            openWindow(id: "settings")
-            NSApplication.shared.activate(ignoringOtherApps: true)
+            .buttonStyle(.borderless)
+            .padding(.top, 10)
         }
+        .padding(14)
+        .frame(width: 340)
+    }
 
-        Button("Settings...") {
-            state.selectedSettingsTab = .general
-            openWindow(id: "settings")
-            NSApplication.shared.activate(ignoringOtherApps: true)
+    private var header: some View {
+        HStack(alignment: .center, spacing: 10) {
+            Image("MenuBarIcon")
+                .renderingMode(.template)
+                .resizable()
+                .scaledToFit()
+                .frame(width: 22, height: 22)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text("iPortForwarder")
+                    .font(.headline)
+                Text("\(state.rules.filter(\.isEnabled).count) active of \(state.rules.count)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer()
         }
+    }
 
-        Divider()
-
-        Button("Quit iPortForwarder") {
-            state.shutdown()
-            NSApplication.shared.terminate(nil)
+    private var emptyState: some View {
+        VStack(alignment: .center, spacing: 8) {
+            Image(systemName: "arrow.left.arrow.right")
+                .font(.system(size: 22))
+                .foregroundStyle(.secondary)
+            Text("No forwarding rules")
+                .font(.subheadline)
+            Text("Add a rule in Settings to start forwarding ports.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
         }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 28)
+    }
+}
+
+struct MenuBarRuleRow: View {
+    @EnvironmentObject var state: GlobalState
+    let rule: ForwardRuleConfig
+
+    var body: some View {
+        Button {
+            state.setRule(rule, enabled: !rule.isEnabled)
+        } label: {
+            HStack(spacing: 10) {
+                ZStack {
+                    if rule.isEnabled {
+                        Circle()
+                            .fill(Color.green)
+                            .frame(width: 8, height: 8)
+                    }
+                }
+                .frame(width: 8, height: 8)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(rule.destinationTitle)
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+
+                    Text(rule.localTitle)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+
+                Spacer(minLength: 8)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .padding(.vertical, 6)
+        .padding(.horizontal, 8)
+        .background(Color.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 7))
+        .help(rule.isEnabled ? "Disable forwarding" : "Enable forwarding")
     }
 }
 
@@ -95,6 +198,26 @@ extension ForwardRuleConfig {
             let localEnd = Int(localStart) + Int(end - start)
             localPortDescription = "\(localStart)-\(localEnd)"
             return "\(localPortDescription) -> \(address):\(start)-\(end)"
+        }
+    }
+
+    var destinationTitle: String {
+        switch remotePort {
+        case let .single(port):
+            return "\(address):\(port)"
+        case let .range(start, end):
+            return "\(address):\(start)-\(end)"
+        }
+    }
+
+    var localTitle: String {
+        switch remotePort {
+        case let .single(port):
+            return "Local \(localPort ?? port)"
+        case let .range(start, end):
+            let localStart = localPort ?? start
+            let localEnd = Int(localStart) + Int(end - start)
+            return "Local \(localStart)-\(localEnd)"
         }
     }
 }
