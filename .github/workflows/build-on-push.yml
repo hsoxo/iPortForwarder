@@ -1,4 +1,4 @@
-name: Build dmg On Push
+name: Build On Push
 
 on:
   push:
@@ -7,46 +7,60 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  APP_NAME: iPortForwarder
 
 jobs:
   build:
-    runs-on: macos-15
+    runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@1.85
+        uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-apple-darwin,x86_64-apple-darwin
 
       - name: Build xcframework
         run: sh build-xcframework.sh
 
-      - name: Setup Xcode
-        uses: maxim-lobanov/setup-xcode@v1
-        with:
-          xcode-version: '16.2'
-
-      - name: Xcode build
+      - name: Archive app
         run: |
           cd ui
           xcodebuild archive \
             -scheme iPortForwarder \
             -archivePath build.xcarchive \
             -configuration Release \
-            ONLY_ACTIVE_ARCH=NO
+            ONLY_ACTIVE_ARCH=NO \
+            CODE_SIGN_IDENTITY="-" \
+            CODE_SIGN_STYLE=Manual
 
-      - name: Make dmg
+      - name: Package zip
+        run: |
+          ditto -c -k --keepParent \
+            "ui/build.xcarchive/Products/Applications/${APP_NAME}.app" \
+            "${APP_NAME}.zip"
+
+      - name: Package dmg
         run: |
           brew install graphicsmagick imagemagick
           npm install --global create-dmg
-          # Ignore the failure since there is no code signing identity,
-          # the DMG is still created and fine.
-          create-dmg 'ui/build.xcarchive/Products/Applications/iPortForwarder.app' || true
-          mv iPortForwarder*.dmg iPortForwarder.dmg
+          create-dmg "ui/build.xcarchive/Products/Applications/${APP_NAME}.app" || true
+          if ls ${APP_NAME}*.dmg >/dev/null 2>&1; then
+            mv ${APP_NAME}*.dmg "${APP_NAME}.dmg"
+          else
+            hdiutil create \
+              -volname "${APP_NAME}" \
+              -srcfolder "ui/build.xcarchive/Products/Applications/${APP_NAME}.app" \
+              -ov \
+              -format UDZO \
+              "${APP_NAME}.dmg"
+          fi
 
       - name: Upload Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: iPortForwarder
-          path: ${{ github.workspace }}/iPortForwarder.dmg
+          path: |
+            ${{ github.workspace }}/${{ env.APP_NAME }}.zip
+            ${{ github.workspace }}/${{ env.APP_NAME }}.dmg
