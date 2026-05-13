@@ -5,6 +5,8 @@ import Libipf
 
 @main
 struct iPortForwarderApp: App {
+    @StateObject private var state = globalState
+
     init() {
         initLibipfErrorHandler()
         globalState.restoreSavedRules()
@@ -17,20 +19,20 @@ struct iPortForwarderApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView()
-                .environmentObject(globalState)
+                .environmentObject(state)
         }
         .commands {
             iPortForwarderCommands()
         }
 
         MenuBarExtra("iPortForwarder", systemImage: "arrow.left.arrow.right.circle") {
-            if globalState.rules.isEmpty {
+            if state.rules.isEmpty {
                 Text("No forwarding rules")
             } else {
-                ForEach(globalState.rules) { rule in
+                ForEach(state.rules) { rule in
                     Toggle(isOn: Binding(
                         get: { rule.isEnabled },
-                        set: { globalState.setRule(rule, enabled: $0) }
+                        set: { state.setRule(rule, enabled: $0) }
                     )) {
                         Text(rule.menuTitle)
                     }
@@ -43,26 +45,28 @@ struct iPortForwarderApp: App {
                 NSApplication.shared.activate(ignoringOtherApps: true)
                 NSApplication.shared.windows.first?.makeKeyAndOrderFront(nil)
                 withAnimation {
-                    globalState.isAddingNewItem = true
+                    state.isAddingNewItem = true
                 }
             }
 
             Button("Settings...") {
                 NSApplication.shared.activate(ignoringOtherApps: true)
-                NSApplication.shared.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+                if !NSApplication.shared.sendAction(Selector(("showPreferencesWindow:")), to: nil, from: nil) {
+                    NSApplication.shared.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+                }
             }
 
             Divider()
 
             Button("Quit iPortForwarder") {
-                globalState.shutdown()
+                state.shutdown()
                 NSApplication.shared.terminate(nil)
             }
         }
 
         Settings {
             SettingsView()
-                .environmentObject(globalState)
+                .environmentObject(state)
         }
     }
 }
