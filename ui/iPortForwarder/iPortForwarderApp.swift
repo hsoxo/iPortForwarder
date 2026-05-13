@@ -27,6 +27,7 @@ struct iPortForwarderApp: App {
                 .scaledToFit()
                 .frame(width: 22, height: 22)
         }
+        .menuBarExtraStyle(.window)
         .commands {
             iPortForwarderCommands()
         }
