@@ -7,7 +7,7 @@ import Foundation
 let package = Package(
     name: "Libipf",
     platforms: [
-        .macOS(.v12)
+        .macOS(.v13)
     ],
     products: [
         .library(

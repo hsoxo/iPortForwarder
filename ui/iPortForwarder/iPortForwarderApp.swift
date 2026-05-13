@@ -1,58 +1,13 @@
+import AppKit
 import SwiftUI
 
 import Libipf
 
 @main
 struct iPortForwarderApp: App {
-    @AppStorage("loadConfigurationsOnStartup") private var loadConfigurationsOnStartup = false
-    @AppStorage("configurationsWillBeLoadedBookmarks") private var configurationsWillBeLoadedBookmarks: [Data] = []
-
     init() {
         initLibipfErrorHandler()
-
-        if loadConfigurationsOnStartup {
-            for (index, bookmarkData) in configurationsWillBeLoadedBookmarks.enumerated() {
-                var stale = false
-                do {
-                    let configFileURL = try URL(
-                        resolvingBookmarkData: bookmarkData,
-                        options: [.withSecurityScope],
-                        relativeTo: nil,
-                        bookmarkDataIsStale: &stale
-                    )
-
-                    if stale {
-                        let newBookmarkData = try configFileURL.bookmarkData(
-                            options: [.withSecurityScope],
-                            includingResourceValuesForKeys: nil,
-                            relativeTo: nil
-                        )
-                        configurationsWillBeLoadedBookmarks[index] = newBookmarkData
-                    }
-
-                    if configFileURL.startAccessingSecurityScopedResource() {
-                        defer { configFileURL.stopAccessingSecurityScopedResource() }
-
-                        let jsonString: String
-                        if #available(macOS 13, *) {
-                            jsonString = try String(contentsOfFile: configFileURL.path(percentEncoded: false))
-                        } else {
-                            jsonString = try String(contentsOfFile: configFileURL.path)
-                        }
-
-                        let list = try JSONDecoder().decode([ForwardedItemInfo].self, from: jsonString.data(using: .utf8)!)
-
-                        for item in list {
-                            globalState.items.append(try ForwardedItem(item: item))
-                        }
-                    } else {
-                        showErrorDialog("Unable to access the configuration file. Please ensure the file exists and that you have granted the necessary permissions.")
-                    }
-                } catch {
-                    showErrorDialog(error)
-                }
-            }
-        }
+        globalState.restoreSavedRules()
 
         Task.detached {
             await AppUpdater.checkForUpdates()
@@ -63,16 +18,66 @@ struct iPortForwarderApp: App {
         WindowGroup {
             ContentView()
                 .environmentObject(globalState)
-                .onDisappear {
-                    globalState.clear()
-                }
         }
         .commands {
             iPortForwarderCommands()
         }
 
+        MenuBarExtra("iPortForwarder", systemImage: "arrow.left.arrow.right.circle") {
+            if globalState.rules.isEmpty {
+                Text("No forwarding rules")
+            } else {
+                ForEach(globalState.rules) { rule in
+                    Toggle(isOn: Binding(
+                        get: { rule.isEnabled },
+                        set: { globalState.setRule(rule, enabled: $0) }
+                    )) {
+                        Text(rule.menuTitle)
+                    }
+                }
+            }
+
+            Divider()
+
+            Button("Add New Rule") {
+                NSApplication.shared.activate(ignoringOtherApps: true)
+                NSApplication.shared.windows.first?.makeKeyAndOrderFront(nil)
+                withAnimation {
+                    globalState.isAddingNewItem = true
+                }
+            }
+
+            SettingsLink {
+                Text("Settings...")
+            }
+
+            Divider()
+
+            Button("Quit iPortForwarder") {
+                globalState.shutdown()
+                NSApplication.shared.terminate(nil)
+            }
+        }
+
         Settings {
             SettingsView()
+                .environmentObject(globalState)
+        }
+    }
+}
+
+extension ForwardRuleConfig {
+    var menuTitle: String {
+        let localPortDescription: String
+        switch remotePort {
+        case let .single(port):
+            localPortDescription = String(localPort ?? port)
+            return "\(localPortDescription) -> \(address):\(port)"
+        case let .range(start, end):
+            let localStart = localPort ?? start
+            let localEnd = Int(localStart) + Int(end - start)
+            localPortDescription = "\(localStart)-\(localEnd)"
+            return "\(localPortDescription) -> \(address):\(start)-\(end)"
         }
     }
 }

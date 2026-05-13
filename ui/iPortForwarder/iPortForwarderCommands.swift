@@ -21,9 +21,7 @@ struct iPortForwarderCommands: Commands {
         CommandGroup(replacing: .saveItem) {
             Button("Save Current Forwarding List") {
                 if let window {
-                    let listOfItemInfo = globalState.items.map {
-                        ForwardedItemInfo(item: $0)
-                    }
+                    let listOfItemInfo = globalState.exportRules()
                     let jsonData = try! JSONEncoder().encode(listOfItemInfo)
                     let jsonString = String(data: jsonData, encoding: .utf8)!
 
@@ -67,19 +65,20 @@ struct iPortForwarderCommands: Commands {
                         if $0 == .OK {
                             if let openUrl = openPanel.url {
                                 do {
-                                    var jsonString: String
-                                    if #available(macOS 13, *) {
-                                        jsonString = try String(contentsOfFile: openUrl.path(percentEncoded: false))
+                                    let jsonString = try String(contentsOfFile: openUrl.path(percentEncoded: false))
+                                    let data = jsonString.data(using: .utf8)!
+                                    let decoder = JSONDecoder()
+
+                                    let rules: [ForwardRuleConfig]
+                                    if let decodedRules = try? decoder.decode([ForwardRuleConfig].self, from: data) {
+                                        rules = decodedRules
                                     } else {
-                                        jsonString = try String(contentsOfFile: openUrl.path)
+                                        let legacyItems = try decoder.decode([ForwardedItemInfo].self, from: data)
+                                        rules = legacyItems.map { ForwardRuleConfig(item: $0) }
                                     }
 
-                                    let list = try JSONDecoder().decode([ForwardedItemInfo].self, from: jsonString.data(using: .utf8)!)
-
-                                    try withAnimation {
-                                        for item in list {
-                                            globalState.items.append(try ForwardedItem(item: item))
-                                        }
+                                    withAnimation {
+                                        globalState.importRules(rules)
                                     }
                                 } catch {
                                     showErrorDialog(error)

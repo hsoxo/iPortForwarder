@@ -51,6 +51,40 @@ protocol DisplayableForwardedItem {
     var allowLan: Bool { get }
 }
 
+struct ForwardRuleConfig: Codable, DisplayableForwardedItem, Identifiable, Equatable {
+    var id: UUID
+    var address: String
+    var remotePort: Port
+    var localPort: UInt16?
+    var allowLan: Bool
+    var isEnabled: Bool
+
+    init(
+        id: UUID = UUID(),
+        address: String,
+        remotePort: Port,
+        localPort: UInt16? = nil,
+        allowLan: Bool = false,
+        isEnabled: Bool = true
+    ) {
+        self.id = id
+        self.address = address
+        self.remotePort = remotePort
+        self.localPort = localPort
+        self.allowLan = allowLan
+        self.isEnabled = isEnabled
+    }
+
+    init(item: DisplayableForwardedItem, isEnabled: Bool = true) {
+        self.id = UUID()
+        self.address = item.address
+        self.remotePort = item.remotePort
+        self.localPort = item.localPort
+        self.allowLan = item.allowLan
+        self.isEnabled = isEnabled
+    }
+}
+
 class ForwardedItem: DisplayableForwardedItem, Identifiable {
     let address: String
     let remotePort: Port
@@ -83,7 +117,7 @@ class ForwardedItem: DisplayableForwardedItem, Identifiable {
         self.forwardRuleId = try forward(
             address: address,
             remotePort: remotePort,
-            localPort: remotePort,
+            localPort: localPort ?? remotePort,
             allowLan: allowLan
         )
     }
@@ -222,6 +256,10 @@ class ForwardedItem: DisplayableForwardedItem, Identifiable {
     public func destory() {
         cancelForward(forwardRuleId: self.forwardRuleId)
         hasDeinit = true
+    }
+
+    public func destroy() {
+        destory()
     }
 }
 

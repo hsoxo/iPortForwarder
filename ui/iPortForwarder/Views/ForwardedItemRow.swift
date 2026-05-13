@@ -13,7 +13,7 @@ struct ForwardedItemRow: View {
     var item: DisplayableForwardedItem?
     var errors: [IpfError]?
 
-    var onNewItemAdded: ((_ newItem: ForwardedItem) -> Void)?
+    var onNewItemAdded: ((_ newItem: ForwardRuleConfig) -> Void)?
     var onChange: ((_ ipAddress: String, _ remotePort: Port, _ localPort: UInt16?, _ allowLan: Bool) -> Void)?
     var onCancel: (() -> Void)?
     var onDelete: (() -> Void)?
@@ -61,7 +61,7 @@ struct ForwardedItemRow: View {
     init(
         item: DisplayableForwardedItem? = nil,
         errors: [IpfError]? = nil,
-        onNewItemAdded: ((_ newItem: ForwardedItem) -> Void)? = nil,
+        onNewItemAdded: ((_ newItem: ForwardRuleConfig) -> Void)? = nil,
         onChange: ((_ ipAddress: String, _ remotePort: Port, _ localPort: UInt16?, _ allowLan: Bool) -> Void)? = nil,
         onCancel: (() -> Void)? = nil,
         onDelete: (() -> Void)? = nil
@@ -450,13 +450,13 @@ struct ForwardedItemRow: View {
                 }
             }
         } else if let onNewItemAdded {
-            do {
-                let newItem =
-                try ForwardedItem(address: address, remotePort: remotePort, localPort: localPort, allowLan: allowLan)
-                onNewItemAdded(newItem)
-            } catch {
-                showErrorDialog(error)
-            }
+            let newItem = ForwardRuleConfig(
+                address: address,
+                remotePort: remotePort,
+                localPort: localPort,
+                allowLan: allowLan
+            )
+            onNewItemAdded(newItem)
         }
     }
 

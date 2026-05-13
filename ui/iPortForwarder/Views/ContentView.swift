@@ -7,37 +7,39 @@ struct ContentView: View {
         VStack {
             ScrollView {
                 VStack {
-                    ForEach(globalState.items) { item in
-                        ForwardedItemRow(
-                            item: item,
-                            errors: globalState.errors[item.id],
-                            onChange: { address, remotePort, localPort, allowLan in
-                                let index = globalState.items.firstIndex(where: { $0 === item })!
-                                globalState.items[index].destory()
-                                do {
-                                    globalState.errors.removeValue(forKey: item.id)
-                                    let newItem = try ForwardedItem(address: address, remotePort: remotePort, localPort: localPort, allowLan: allowLan)
+                    ForEach(globalState.rules) { rule in
+                        HStack {
+                            Toggle("", isOn: Binding(
+                                get: { rule.isEnabled },
+                                set: { globalState.setRule(rule, enabled: $0) }
+                            ))
+                            .toggleStyle(.switch)
+                            .help(rule.isEnabled ? "Disable forwarding" : "Enable forwarding")
+
+                            ForwardedItemRow(
+                                item: rule,
+                                errors: globalState.errors[rule.id],
+                                onChange: { address, remotePort, localPort, allowLan in
+                                    var updatedRule = rule
+                                    updatedRule.address = address
+                                    updatedRule.remotePort = remotePort
+                                    updatedRule.localPort = localPort
+                                    updatedRule.allowLan = allowLan
                                     withAnimation {
-                                        globalState.items[index] = newItem
+                                        globalState.updateRule(updatedRule)
                                     }
-                                } catch {
-                                    showErrorDialog(error)
+                                },
+                                onDelete: {
+                                    withAnimation {
+                                        globalState.deleteRule(rule)
+                                    }
                                 }
-                            },
-                            onDelete: {
-                                let index = globalState.items.firstIndex(where: { $0 === item })
-                                withAnimation {
-                                    globalState.items.remove(at: index!)
-                                    globalState.errors.removeValue(forKey: item.id)
-                                }
-                            }
-                        )
+                            )
+                        }
                         .contextMenu {
                             Button(action: {
-                                let index = globalState.items.firstIndex(where: { $0 === item })
                                 withAnimation {
-                                    globalState.items.remove(at: index!)
-                                    globalState.errors.removeValue(forKey: item.id)
+                                    globalState.deleteRule(rule)
                                 }
                             }) {
                                 Text("Delete")
@@ -47,7 +49,7 @@ struct ContentView: View {
 
                     if globalState.isAddingNewItem {
                         ForwardedItemRow(onNewItemAdded: { newItem in
-                            globalState.items.append(newItem)
+                            globalState.addRule(newItem)
                             globalState.isAddingNewItem = false
                         }, onCancel: { withAnimation {
                             globalState.isAddingNewItem = false
@@ -57,7 +59,7 @@ struct ContentView: View {
                 }
 
                 // A hack to make ScrollView stable
-                if globalState.items.isEmpty {
+                if globalState.rules.isEmpty {
                     HStack {
                         Spacer()
                     }
