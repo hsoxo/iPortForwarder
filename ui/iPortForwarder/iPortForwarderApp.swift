@@ -47,8 +47,9 @@ struct iPortForwarderApp: App {
                 }
             }
 
-            SettingsLink {
-                Text("Settings...")
+            Button("Settings...") {
+                NSApplication.shared.activate(ignoringOtherApps: true)
+                NSApplication.shared.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
             }
 
             Divider()
