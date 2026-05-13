@@ -4,6 +4,11 @@ import Libipf
 
 private let savedRulesKey = "savedForwardRuleConfigs"
 
+enum SettingsTab: Hashable {
+    case general
+    case rules
+}
+
 extension Array: @retroactive RawRepresentable where Element: Codable {
     public init?(rawValue: String) {
         guard let data = rawValue.data(using: .utf8),
@@ -27,6 +32,7 @@ class GlobalState: ObservableObject {
     @Published private(set) var rules: [ForwardRuleConfig] = []
     @Published var errors: [UUID: [IpfError]] = [:]
     @Published var isAddingNewItem: Bool = false
+    @Published var selectedSettingsTab: SettingsTab = .general
 
     private var activeItems: [UUID: ForwardedItem] = [:]
     private var activeRuleIds: [Int8: UUID] = [:]

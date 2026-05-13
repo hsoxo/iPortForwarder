@@ -17,17 +17,18 @@ struct iPortForwarderApp: App {
     }
 
     var body: some Scene {
-        WindowGroup("iPortForwarder", id: "main") {
-            ContentView()
+        MenuBarExtra {
+            MenuBarContentView()
                 .environmentObject(state)
+        } label: {
+            Image("MenuBarIcon")
+                .renderingMode(.template)
+                .resizable()
+                .scaledToFit()
+                .frame(width: 22, height: 22)
         }
         .commands {
             iPortForwarderCommands()
-        }
-
-        MenuBarExtra("iPortForwarder", systemImage: "arrow.left.arrow.right.circle") {
-            MenuBarContentView()
-                .environmentObject(state)
         }
 
         WindowGroup("Settings", id: "settings") {
@@ -59,13 +60,15 @@ struct MenuBarContentView: View {
 
         Button("Add New Rule") {
             withAnimation {
+                state.selectedSettingsTab = .rules
                 state.isAddingNewItem = true
             }
-            openWindow(id: "main")
+            openWindow(id: "settings")
             NSApplication.shared.activate(ignoringOtherApps: true)
         }
 
         Button("Settings...") {
+            state.selectedSettingsTab = .general
             openWindow(id: "settings")
             NSApplication.shared.activate(ignoringOtherApps: true)
         }

@@ -28,15 +28,33 @@ struct SettingsView: View {
     @StateObject private var launchingAtLogin = LaunchingAtLogin()
 
     var body: some View {
+        TabView(selection: $globalState.selectedSettingsTab) {
+            generalTab
+                .tabItem {
+                    Label("General", systemImage: "gearshape")
+                }
+                .tag(SettingsTab.general)
+
+            rulesTab
+                .tabItem {
+                    Label("Rules", systemImage: "arrow.left.arrow.right")
+                }
+                .tag(SettingsTab.rules)
+        }
+        .frame(minWidth: 620, minHeight: 320)
+        .padding()
+    }
+
+    private var generalTab: some View {
         VStack(alignment: .leading, spacing: 12) {
             Toggle("Launch at login", isOn: $launchingAtLogin.enabled)
+            Spacer()
+        }
+        .padding()
+    }
 
-            Text("Forwarding rules are saved automatically and enabled rules are restored at launch.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-
-            Divider()
-
+    private var rulesTab: some View {
+        VStack(alignment: .leading, spacing: 12) {
             ScrollView {
                 VStack(spacing: 8) {
                     ForEach(globalState.rules) { rule in
@@ -80,7 +98,6 @@ struct SettingsView: View {
                     }
                 }
             }
-            .frame(minWidth: 520, minHeight: 180)
 
             HStack {
                 Spacer()
