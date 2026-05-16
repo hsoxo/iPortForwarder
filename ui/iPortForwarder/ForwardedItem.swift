@@ -85,6 +85,7 @@ struct ForwardRuleConfig: Codable, DisplayableForwardedItem, Identifiable, Equat
     }
 }
 
+@MainActor
 class ForwardedItem: DisplayableForwardedItem, Identifiable {
     let address: String
     let remotePort: Port
@@ -93,7 +94,7 @@ class ForwardedItem: DisplayableForwardedItem, Identifiable {
     private let forwardRuleId: Int8
     private var hasDeinit = false
 
-    var id: Int8 {
+    nonisolated var id: Int8 {
         get {
             return self.forwardRuleId
         }
@@ -253,13 +254,10 @@ class ForwardedItem: DisplayableForwardedItem, Identifiable {
         }
     }
 
-    public func destory() {
-        cancelForward(forwardRuleId: self.forwardRuleId)
-        hasDeinit = true
-    }
-
     public func destroy() {
-        destory()
+        guard !hasDeinit else { return }
+        hasDeinit = true
+        cancelForward(forwardRuleId: self.forwardRuleId)
     }
 }
 

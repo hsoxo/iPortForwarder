@@ -18,7 +18,18 @@ enum AppUpdater {
     static private let owner = "hronro"
     static private let repo = "iPortForwarder"
 
+    static private let lastCheckKey = "AppUpdater.lastCheckDate"
+    static private let skippedVersionKey = "AppUpdater.skippedVersion"
+    static private let backgroundCheckInterval: TimeInterval = 24 * 60 * 60
+
     static func checkForUpdates(explicitly: Bool = false) async {
+        if !explicitly, let last = UserDefaults.standard.object(forKey: lastCheckKey) as? Date {
+            let elapsed = Date().timeIntervalSince(last)
+            if elapsed >= 0 && elapsed < backgroundCheckInterval {
+                return
+            }
+        }
+
         let urlString = "https://api.github.com/repos/\(owner)/\(repo)/releases/latest"
 
         let url = URL(string: urlString)!
@@ -47,18 +58,28 @@ enum AppUpdater {
             release = try JSONDecoder().decode(GitHubRelease.self, from: data)
         } catch {
             if explicitly {
-                await showErrorDialog("Failed to decode GitHub release JSON.")
-                await showErrorDialog(error)
+                await showErrorDialog("Failed to decode GitHub release JSON: \(error.localizedDescription)")
             }
 
             return
         }
+
+        UserDefaults.standard.set(Date(), forKey: lastCheckKey)
+
         let latestVersion = release.tagName.replacingOccurrences(of: "v", with: "")
         let currentVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.0.0"
 
-        if self.compareVersions(latestVersion, currentVersion) {
-            await self.presentUpdate(latestVersion)
+        guard self.compareVersions(latestVersion, currentVersion) else {
+            return
         }
+
+        if !explicitly,
+           let skipped = UserDefaults.standard.string(forKey: skippedVersionKey),
+           skipped == latestVersion {
+            return
+        }
+
+        await self.presentUpdate(latestVersion)
     }
 
     private static func compareVersions(_ version1: String, _ version2: String) -> Bool {
@@ -86,9 +107,12 @@ enum AppUpdater {
         alert.messageText = "iPortForwarder v\(newVersion) is available!"
         alert.addButton(withTitle: "View Release Page")
         alert.addButton(withTitle: "Not Now")
+        alert.addButton(withTitle: "Skip This Version")
         switch alert.runModal() {
         case .alertFirstButtonReturn:
             NSWorkspace.shared.open(URL(string: "https://github.com/\(owner)/\(repo)/releases")!)
+        case .alertThirdButtonReturn:
+            UserDefaults.standard.set(newVersion, forKey: skippedVersionKey)
         default:
             break
         }

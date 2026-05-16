@@ -123,7 +123,7 @@ public func cancelForward(forwardRuleId: Int8) {
     Ipf.ipf_cancel_forward(forwardRuleId)
 }
 
-public func registerErrorHandler(_ handler: @escaping (Int8, IpfError) -> Void) throws {
+public func registerErrorHandler(_ handler: @escaping @Sendable (Int8, IpfError) -> Void) throws {
     if _externalErrorHandler == nil {
         _externalErrorHandler = handler
 
@@ -137,10 +137,15 @@ public func registerErrorHandler(_ handler: @escaping (Int8, IpfError) -> Void) 
     }
 }
 
-var _externalErrorHandler: ((Int8, IpfError) -> Void)? = nil
+/// Safety: written exactly once from `registerErrorHandler` before any rules exist.
+/// The subsequent `ipf_register_error_handler` FFI call publishes the C bridge via
+/// Rust's `OnceLock`, which acts as a happens-before barrier for the tokio threads
+/// that invoke `cErrorHandler`. After that point this variable is read-only.
+nonisolated(unsafe) var _externalErrorHandler: (@Sendable (Int8, IpfError) -> Void)? = nil
+
 func cErrorHandler(ruleId: Int8, errorCode: Int8) {
-    let ipfError = IpfError(rawValue: errorCode)!
-    if let externalErrorHandler = _externalErrorHandler {
-        externalErrorHandler(ruleId, ipfError)
+    guard let ipfError = IpfError(rawValue: errorCode) else {
+        return
     }
+    _externalErrorHandler?(ruleId, ipfError)
 }

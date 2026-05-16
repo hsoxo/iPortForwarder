@@ -20,26 +20,34 @@ struct iPortForwarderCommands: Commands {
 
         CommandGroup(replacing: .saveItem) {
             Button("Save Current Forwarding List") {
-                if let window {
-                    let listOfItemInfo = globalState.exportRules()
-                    let jsonData = try! JSONEncoder().encode(listOfItemInfo)
-                    let jsonString = String(data: jsonData, encoding: .utf8)!
+                guard let window else { return }
+                let listOfItemInfo = globalState.exportRules()
+                let jsonData: Data
+                do {
+                    jsonData = try JSONEncoder().encode(listOfItemInfo)
+                } catch {
+                    showErrorDialog(error)
+                    return
+                }
+                guard let jsonString = String(data: jsonData, encoding: .utf8) else {
+                    showErrorDialog("Failed to encode forwarding list as UTF-8.")
+                    return
+                }
 
-                    let savePanel = NSSavePanel()
-                    savePanel.allowedContentTypes = [.json]
-                    savePanel.canCreateDirectories = true
-                    savePanel.isExtensionHidden = false
-                    savePanel.title = "Save current forwarding list"
-                    savePanel.message = "Choose a folder and a name to store the list."
-                    savePanel.nameFieldLabel = "List name:"
-                    savePanel.beginSheetModal(for: window) {
-                        if $0 == .OK {
-                            if let saveUrl = savePanel.url {
-                                do {
-                                    try jsonString.write(to: saveUrl, atomically: false, encoding: .utf8)
-                                } catch {
-                                    showErrorDialog(error)
-                                }
+                let savePanel = NSSavePanel()
+                savePanel.allowedContentTypes = [.json]
+                savePanel.canCreateDirectories = true
+                savePanel.isExtensionHidden = false
+                savePanel.title = "Save current forwarding list"
+                savePanel.message = "Choose a folder and a name to store the list."
+                savePanel.nameFieldLabel = "List name:"
+                savePanel.beginSheetModal(for: window) {
+                    if $0 == .OK {
+                        if let saveUrl = savePanel.url {
+                            do {
+                                try jsonString.write(to: saveUrl, atomically: false, encoding: .utf8)
+                            } catch {
+                                showErrorDialog(error)
                             }
                         }
                     }
@@ -65,8 +73,7 @@ struct iPortForwarderCommands: Commands {
                         if $0 == .OK {
                             if let openUrl = openPanel.url {
                                 do {
-                                    let jsonString = try String(contentsOfFile: openUrl.path(percentEncoded: false))
-                                    let data = jsonString.data(using: .utf8)!
+                                    let data = try Data(contentsOf: openUrl)
                                     let decoder = JSONDecoder()
 
                                     let rules: [ForwardRuleConfig]

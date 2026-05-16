@@ -3,12 +3,6 @@ import SwiftUI
 
 import Libipf
 
-extension IpfError: @retroactive Identifiable {
-    public var id: Int8 {
-        return self.rawValue
-    }
-}
-
 struct ForwardedItemRow: View {
     var item: DisplayableForwardedItem?
     var errors: [IpfError]?
@@ -205,7 +199,7 @@ struct ForwardedItemRow: View {
                         }
                     }
                     .buttonStyle(.borderless)
-                    .help(remotePort.isSingle() ? "Switch to forward a range of ports" : "Switch to forward a single por")
+                    .help(remotePort.isSingle() ? "Switch to forward a range of ports" : "Switch to forward a single port")
                 }
 
                 Spacer()
@@ -363,10 +357,9 @@ struct ForwardedItemRow: View {
                             VStack {
                                 Spacer()
                                     .frame(height: 8)
-                                ForEach(errors) {
-                                    let errorMsg = $0.message()
+                                ForEach(Array(errors.enumerated()), id: \.offset) { _, error in
                                     HStack {
-                                        Text(errorMsg)
+                                        Text(error.message())
                                             .foregroundColor(.white)
                                         Spacer()
                                     }

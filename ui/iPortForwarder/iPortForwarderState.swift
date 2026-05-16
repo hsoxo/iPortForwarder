@@ -9,24 +9,6 @@ enum SettingsTab: Hashable {
     case rules
 }
 
-extension Array: @retroactive RawRepresentable where Element: Codable {
-    public init?(rawValue: String) {
-        guard let data = rawValue.data(using: .utf8),
-              let result = try? JSONDecoder().decode([Element].self, from: data)
-        else { return nil }
-        self = result
-    }
-
-    public var rawValue: String {
-        guard let data = try? JSONEncoder().encode(self),
-              let result = String(data: data, encoding: .utf8)
-        else {
-            return "[]"
-        }
-        return result
-    }
-}
-
 @MainActor
 class GlobalState: ObservableObject {
     @Published private(set) var rules: [ForwardRuleConfig] = []
@@ -148,9 +130,11 @@ class GlobalState: ObservableObject {
     }
 
     private func saveRules() {
-        if !isLoading {
-            UserDefaults.standard.set(rules.rawValue, forKey: savedRulesKey)
-        }
+        guard !isLoading else { return }
+        guard let data = try? JSONEncoder().encode(rules),
+              let string = String(data: data, encoding: .utf8)
+        else { return }
+        UserDefaults.standard.set(string, forKey: savedRulesKey)
     }
 
     private func startRule(_ rule: ForwardRuleConfig) {
@@ -180,9 +164,13 @@ class GlobalState: ObservableObject {
 
 @MainActor
 func initLibipfErrorHandler() {
-    try! Libipf.registerErrorHandler { id, ipfError in
-        DispatchQueue.main.async {
-            globalState.recordError(forwardRuleId: id, error: ipfError)
+    do {
+        try Libipf.registerErrorHandler { @Sendable id, ipfError in
+            Task { @MainActor in
+                globalState.recordError(forwardRuleId: id, error: ipfError)
+            }
         }
+    } catch {
+        showErrorDialog(error)
     }
 }

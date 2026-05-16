@@ -5,6 +5,7 @@ use std::ffi::CStr;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, ToSocketAddrs};
 use std::os::raw::c_char;
 use std::sync::{LazyLock, Mutex, OnceLock};
+use std::time::Duration;
 
 use tokio::io::copy_bidirectional;
 use tokio::net::{TcpListener, TcpStream};
@@ -92,55 +93,81 @@ pub extern "C" fn ipf_forward(
     local_port: u16,
     allow_lan: bool,
 ) -> i8 {
-    if let Some(rule_id) = get_new_rule_id() {
-        let addr_str = unsafe {
-            match CStr::from_ptr(address_c_string).to_str() {
-                Ok(addr_str) => addr_str,
-                Err(_) => return Error::InvalidString as i8,
-            }
-        };
-        let socket_addr = match addr_str.parse::<IpAddr>() {
-            Ok(ip) => SocketAddr::new(ip, remote_port),
-            Err(_) => match (addr_str, remote_port).to_socket_addrs() {
-                Ok(mut socket_addrs) => socket_addrs.next().unwrap(),
-                Err(_) => return Error::AddressCantBeResolved as i8,
+    let addr_str = unsafe {
+        match CStr::from_ptr(address_c_string).to_str() {
+            Ok(addr_str) => addr_str,
+            Err(_) => return Error::InvalidString as i8,
+        }
+    };
+    let socket_addr = match addr_str.parse::<IpAddr>() {
+        Ok(ip) => SocketAddr::new(ip, remote_port),
+        Err(_) => match (addr_str, remote_port).to_socket_addrs() {
+            Ok(mut socket_addrs) => match socket_addrs.next() {
+                Some(addr) => addr,
+                None => return Error::AddressCantBeResolved as i8,
             },
-        };
+            Err(_) => return Error::AddressCantBeResolved as i8,
+        },
+    };
 
-        let join_handler = RT.spawn(async move {
-            match TcpListener::bind(SocketAddr::new(
-                if allow_lan { "0.0.0.0" } else { "127.0.0.1" }
-                    .parse()
-                    .unwrap(),
-                local_port,
-            ))
-            .await
-            {
-                Ok(listener) => loop {
-                    if let Ok((mut ingress, _)) = listener.accept().await {
-                        if let Ok(mut egress) = TcpStream::connect(socket_addr).await {
-                            RT.spawn(async move {
-                                _ = copy_bidirectional(&mut ingress, &mut egress).await;
-                            });
-                        }
-                    }
-                },
-                Err(error) => {
-                    if let Some(error_handler) = ERROR_HANDLER.get() {
-                        error_handler(rule_id, Error::from(error) as i8);
-                    }
+    let rule_id = match get_new_rule_id() {
+        Some(id) => id,
+        None => return Error::TooManyRules as i8,
+    };
+
+    let bind_ip = if allow_lan {
+        IpAddr::V4(Ipv4Addr::UNSPECIFIED)
+    } else {
+        IpAddr::V4(Ipv4Addr::LOCALHOST)
+    };
+
+    let join_handler = RT.spawn(async move {
+        match TcpListener::bind(SocketAddr::new(bind_ip, local_port)).await {
+            Ok(listener) => run_accept_loop(rule_id, listener, socket_addr).await,
+            Err(error) => {
+                if let Some(error_handler) = ERROR_HANDLER.get() {
+                    error_handler(rule_id, Error::from(error) as i8);
                 }
             }
-        });
+        }
+    });
 
-        RUNNING_RULES
-            .lock()
-            .unwrap()
-            .insert(rule_id, ForwardRuleHandler::single(join_handler));
+    RUNNING_RULES
+        .lock()
+        .unwrap()
+        .insert(rule_id, ForwardRuleHandler::single(join_handler));
 
-        rule_id
-    } else {
-        Error::TooManyRules as i8
+    rule_id
+}
+
+/// Report an accept error once per this many consecutive failures so transient
+/// hiccups stay quiet while a persistent failure mode still surfaces to the UI.
+const ACCEPT_ERROR_REPORT_INTERVAL: u32 = 100;
+
+async fn run_accept_loop(rule_id: i8, listener: TcpListener, target: SocketAddr) {
+    let mut consecutive_errors: u32 = 0;
+    loop {
+        match listener.accept().await {
+            Ok((mut ingress, _)) => {
+                consecutive_errors = 0;
+                if let Ok(mut egress) = TcpStream::connect(target).await {
+                    RT.spawn(async move {
+                        _ = copy_bidirectional(&mut ingress, &mut egress).await;
+                    });
+                }
+            }
+            Err(error) => {
+                if consecutive_errors % ACCEPT_ERROR_REPORT_INTERVAL == 0 {
+                    if let Some(handler) = ERROR_HANDLER.get() {
+                        handler(rule_id, Error::from(error) as i8);
+                    }
+                }
+                consecutive_errors = consecutive_errors.saturating_add(1);
+                // Backoff briefly to avoid spinning on transient errors such
+                // as EMFILE (too many open files) or EINTR.
+                tokio::time::sleep(Duration::from_millis(100)).await;
+            }
+        }
     }
 }
 
@@ -162,72 +189,66 @@ pub extern "C" fn ipf_forward_range(
         return Error::InvalidLocalPortStart as i8;
     }
 
-    if let Some(rule_id) = get_new_rule_id() {
-        let addr_str = unsafe {
-            match CStr::from_ptr(address_c_string).to_str() {
-                Ok(ip_str) => ip_str,
-                Err(_) => return Error::InvalidString as i8,
-            }
-        };
-        let ip = match addr_str.parse::<IpAddr>() {
-            Ok(ip) => ip,
-            Err(_) => match (addr_str, 0).to_socket_addrs() {
-                Ok(mut socket_addrs) => socket_addrs.next().unwrap().ip(),
-                Err(_) => return Error::AddressCantBeResolved as i8,
+    let addr_str = unsafe {
+        match CStr::from_ptr(address_c_string).to_str() {
+            Ok(ip_str) => ip_str,
+            Err(_) => return Error::InvalidString as i8,
+        }
+    };
+    let ip = match addr_str.parse::<IpAddr>() {
+        Ok(ip) => ip,
+        Err(_) => match (addr_str, 0).to_socket_addrs() {
+            Ok(mut socket_addrs) => match socket_addrs.next() {
+                Some(addr) => addr.ip(),
+                None => return Error::AddressCantBeResolved as i8,
             },
-        };
+            Err(_) => return Error::AddressCantBeResolved as i8,
+        },
+    };
 
-        let join_handlers = (remote_port_start..=remote_port_end)
-            .enumerate()
-            .map(move |(index, remote_port)| {
-                let local_port = local_port_start + index as u16;
-                RT.spawn(async move {
-                    match TcpListener::bind(SocketAddr::new(
-                        IpAddr::V4(if allow_lan {
-                            Ipv4Addr::new(0, 0, 0, 0)
-                        } else {
-                            Ipv4Addr::new(127, 0, 0, 1)
-                        }),
-                        local_port,
-                    ))
-                    .await
-                    {
-                        Ok(listener) => loop {
-                            if let Ok((mut ingress, _)) = listener.accept().await {
-                                if let Ok(mut egress) =
-                                    TcpStream::connect(SocketAddr::new(ip, remote_port)).await
-                                {
-                                    RT.spawn(async move {
-                                        _ = copy_bidirectional(&mut ingress, &mut egress).await;
-                                    });
-                                }
-                            }
-                        },
-                        Err(error) => {
-                            if let Some(error_handler) = ERROR_HANDLER.get() {
-                                error_handler(rule_id, Error::from(error) as i8);
-                            }
+    let rule_id = match get_new_rule_id() {
+        Some(id) => id,
+        None => return Error::TooManyRules as i8,
+    };
+
+    let bind_ip = IpAddr::V4(if allow_lan {
+        Ipv4Addr::UNSPECIFIED
+    } else {
+        Ipv4Addr::LOCALHOST
+    });
+
+    let join_handlers = (remote_port_start..=remote_port_end)
+        .enumerate()
+        .map(move |(index, remote_port)| {
+            let local_port = local_port_start + index as u16;
+            RT.spawn(async move {
+                match TcpListener::bind(SocketAddr::new(bind_ip, local_port)).await {
+                    Ok(listener) => {
+                        run_accept_loop(rule_id, listener, SocketAddr::new(ip, remote_port)).await
+                    }
+                    Err(error) => {
+                        if let Some(error_handler) = ERROR_HANDLER.get() {
+                            error_handler(rule_id, Error::from(error) as i8);
                         }
                     }
-                })
+                }
             })
-            .collect();
+        })
+        .collect();
 
-        RUNNING_RULES
-            .lock()
-            .unwrap()
-            .insert(rule_id, ForwardRuleHandler::multiple(join_handlers));
+    RUNNING_RULES
+        .lock()
+        .unwrap()
+        .insert(rule_id, ForwardRuleHandler::multiple(join_handlers));
 
-        rule_id
-    } else {
-        Error::TooManyRules as i8
-    }
+    rule_id
 }
 
 /// Cancel a forward rule.
 #[no_mangle]
 pub extern "C" fn ipf_cancel_forward(forward_rule_id: i8) -> i8 {
-    if let Some(join_handler) = RUNNING_RULES.lock().unwrap().remove(&forward_rule_id) {
+    let join_handler = RUNNING_RULES.lock().unwrap().remove(&forward_rule_id);
+    if let Some(join_handler) = join_handler {
         release_rule_id(forward_rule_id);
         join_handler.abort();
         forward_rule_id
@@ -236,7 +257,7 @@ pub extern "C" fn ipf_cancel_forward(forward_rule_id: i8) -> i8 {
     }
 }
 
-/// Cancel a forward rule.
+/// Register a callback that will be invoked when a forward rule fails.
 #[no_mangle]
 pub extern "C" fn ipf_register_error_handler(handler: extern "C" fn(i8, i8)) -> i8 {
     if ERROR_HANDLER.set(handler).is_ok() {
