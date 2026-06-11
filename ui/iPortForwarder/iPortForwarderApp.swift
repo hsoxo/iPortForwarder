@@ -188,36 +188,15 @@ struct MenuBarRuleRow: View {
 
 extension ForwardRuleConfig {
     var menuTitle: String {
-        let localPortDescription: String
-        switch remotePort {
-        case let .single(port):
-            localPortDescription = String(localPort ?? port)
-            return "\(localPortDescription) -> \(address):\(port)"
-        case let .range(start, end):
-            let localStart = localPort ?? start
-            let localEnd = Int(localStart) + Int(end - start)
-            localPortDescription = "\(localStart)-\(localEnd)"
-            return "\(localPortDescription) -> \(address):\(start)-\(end)"
-        }
+        let port = remotePort.value
+        return "\(localPort ?? port) -> \(address):\(port)"
     }
 
     var destinationTitle: String {
-        switch remotePort {
-        case let .single(port):
-            return "\(address):\(port)"
-        case let .range(start, end):
-            return "\(address):\(start)-\(end)"
-        }
+        "\(address):\(remotePort.value)"
     }
 
     var localTitle: String {
-        switch remotePort {
-        case let .single(port):
-            return "Local \(localPort ?? port)"
-        case let .range(start, end):
-            let localStart = localPort ?? start
-            let localEnd = Int(localStart) + Int(end - start)
-            return "Local \(localStart)-\(localEnd)"
-        }
+        "Local \(localPort ?? remotePort.value)"
     }
 }

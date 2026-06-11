@@ -16,13 +16,6 @@ public enum IpfError: Int8, Error {
     /// The rule ID is invalid.
     case invalidRuleId = -12
 
-    /// The local port start is invalid,
-    /// which will make the local port end greater than 65535.
-    case invalidLocalPortStart = -13
-
-    /// The remote port end is invalid.
-    case invalidRemotePortEnd = -14
-
     /// The error handler has already been registered.
     case handlerAlreadyRegistered = -15
 
@@ -42,7 +35,7 @@ public enum IpfError: Int8, Error {
 
     /// Too many open files.
     case tooManyOpenFiles = -55
-    
+
     /// Address can not be resolved.
     case addressCantBeResolved = -56
 
@@ -56,10 +49,6 @@ public enum IpfError: Int8, Error {
             return "At most 128 rules are allowed"
         case .invalidRuleId:
             return "The forward rule ID is invalid"
-        case .invalidLocalPortStart:
-            return "The local port start is invalid"
-        case .invalidRemotePortEnd:
-            return "The remote port end is invalid"
         case .handlerAlreadyRegistered:
             return "The error handler has already been registered"
         case .permissionDenied:
@@ -89,28 +78,6 @@ public func forward(
     allowLan: Bool
 ) throws -> Int8 {
     let returnCode = Ipf.ipf_forward(address.cString(using: .utf8), remotePort, localPort, allowLan)
-
-    if returnCode < 0 {
-        throw IpfError(rawValue: returnCode)!
-    }
-
-    return returnCode
-}
-
-public func forwardRange(
-    address: String,
-    remotePortStart: UInt16,
-    remotePortEnd: UInt16,
-    localPortStart: UInt16,
-    allowLan: Bool
-) throws -> Int8 {
-    let returnCode = Ipf.ipf_forward_range(
-        address.cString(using: .utf8),
-        remotePortStart,
-        remotePortEnd,
-        localPortStart,
-        allowLan
-    )
 
     if returnCode < 0 {
         throw IpfError(rawValue: returnCode)!

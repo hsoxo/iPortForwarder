@@ -21,42 +21,16 @@ struct ForwardedItemRow: View {
     @State private var errorsHovered: Bool = false
 
     @FocusState private var addrInFocus: Bool
-    @FocusState private var remoteStartPortInFocus: Bool
-    @FocusState private var remoteEndPortInFocus: Bool
+    @FocusState private var remotePortInFocus: Bool
     @FocusState private var localPortInFocus: Bool
-
-    var localPortEnd: UInt16 {
-        get {
-            if let localPort {
-                switch remotePort {
-                case .single(_):
-                    return 0
-                case .range(let start, let end):
-                    if start == 0 {
-                        return 0
-                    } else if end == 0 {
-                        return 0
-                    } else if localPort == 0 {
-                        return 0
-                    } else if end < start {
-                        return 0
-                    } else if UInt16.max - (end - start) < localPort {
-                        return 0
-                    } else {
-                        return end - start + localPort
-                    }
-                }
-            } else {
-                return 0
-            }
-        }
-    }
 
     init(
         item: DisplayableForwardedItem? = nil,
         errors: [IpfError]? = nil,
         onNewItemAdded: ((_ newItem: ForwardRuleConfig) -> Void)? = nil,
-        onChange: ((_ ipAddress: String, _ remotePort: Port, _ localPort: UInt16?, _ allowLan: Bool) -> Void)? = nil,
+        onChange: (
+            (_ ipAddress: String, _ remotePort: Port, _ localPort: UInt16?, _ allowLan: Bool) -> Void
+        )? = nil,
         onCancel: (() -> Void)? = nil,
         onDelete: (() -> Void)? = nil
     ) {
@@ -122,84 +96,20 @@ struct ForwardedItemRow: View {
 
                     Text(":")
 
-                    TextField(remotePort.isSingle() ? "Port" : "Start", text: Binding(
-                        get: {
-                            switch remotePort {
-                            case let .single(port):
-                                return port == 0 ? "" : String(port)
-                            case let .range(startPort, _):
-                                return startPort == 0 ? "" : String(startPort)
-                            }
-                        },
-                        set: {
-                            switch remotePort {
-                            case .single(_):
+                    TextField(
+                        "Port",
+                        text: Binding(
+                            get: {
+                                remotePort.value == 0 ? "" : String(remotePort.value)
+                            },
+                            set: {
                                 remotePort = .single(port: UInt16($0) ?? 0)
-                            case let .range(start: _, end: endPort):
-                                remotePort = .range(start: UInt16($0) ?? 0, end: endPort)
                             }
-                        }
-                    ).animation())
+                        ).animation()
+                    )
                     .frame(minWidth: 30, maxWidth: 60)
                     .textFieldStyle(.roundedBorder)
-                    .focused($remoteStartPortInFocus)
-
-                    if case let .range(startPort, endPort) = remotePort {
-                        HStack {
-                            Text ("~")
-
-                            TextField("End", text: Binding(
-                                get: { endPort == 0 ? "" : String(endPort) },
-                                set: {
-                                    remotePort = .range(start: startPort, end: UInt16($0) ?? 0)
-                                }
-                            ))
-                            .frame(minWidth: 30, maxWidth: 60)
-                            .textFieldStyle(.roundedBorder)
-                            .focused($remoteEndPortInFocus)
-                        }
-                        .transition(.move(edge: .leading).combined(with: .opacity))
-                    }
-
-                    Button {
-                        switch remotePort {
-                        case let .single(port):
-                            if port == 0 {
-                                remoteStartPortInFocus = true
-                            } else {
-                                remoteEndPortInFocus = true
-                            }
-                            withAnimation {
-                                remotePort = .range(start: port, end: 0)
-                            }
-                        case let .range(startPort, _):
-                            // a hack to make it work
-                            if remoteEndPortInFocus {
-                                remoteEndPortInFocus = false
-                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
-                                    withAnimation {
-                                        remotePort = .single(port: startPort)
-                                    }
-                                }
-                            } else {
-                                withAnimation {
-                                    remotePort = .single(port: startPort)
-                                }
-                            }
-                        }
-                    } label: {
-                        if remotePort.isSingle() {
-                            Label("Switch to a range of ports", systemImage: "shuffle.circle")
-                                .labelStyle(.iconOnly)
-                                .foregroundColor(.gray)
-                        } else {
-                            Label("Switch to a single port", systemImage: "shuffle.circle.fill")
-                                .labelStyle(.iconOnly)
-                                .foregroundColor(.purple)
-                        }
-                    }
-                    .buttonStyle(.borderless)
-                    .help(remotePort.isSingle() ? "Switch to forward a range of ports" : "Switch to forward a single port")
+                    .focused($remotePortInFocus)
                 }
 
                 Spacer()
@@ -211,9 +121,12 @@ struct ForwardedItemRow: View {
                                 showSettings.toggle()
                             }
                         } label: {
-                            Label(showSettings ? "Hide advanced settings" : "Show advanced settings", systemImage: "gear")
-                                .labelStyle(.iconOnly)
-                                .foregroundColor(showSettings ? .accentColor : .primary)
+                            Label(
+                                showSettings ? "Hide advanced settings" : "Show advanced settings",
+                                systemImage: "gear"
+                            )
+                            .labelStyle(.iconOnly)
+                            .foregroundColor(showSettings ? .accentColor : .primary)
                         }
                         .help(showSettings ? "Hide advanced settings" : "Show advanced settings")
                     }
@@ -263,7 +176,7 @@ struct ForwardedItemRow: View {
             if showSettings || item == nil {
                 HStack {
                     Toggle(
-                        remotePort.isSingle() ? "Use a different local port" : "Use different local ports",
+                        "Use a different local port",
                         isOn: Binding(
                             get: { localPort != nil },
                             set: {
@@ -294,32 +207,18 @@ struct ForwardedItemRow: View {
 
                     if let localPort {
                         HStack {
-                            switch remotePort {
-                            case .single(_):
-                                TextField("Port", text: Binding(
+                            TextField(
+                                "Port",
+                                text: Binding(
                                     get: { localPort == 0 ? "" : String(localPort) },
                                     set: {
                                         self.localPort = UInt16($0) ?? 0
                                     }
-                                ))
-                                .frame(minWidth: 30, maxWidth: 60)
-                                .textFieldStyle(.roundedBorder)
-                                .focused($localPortInFocus)
-                            case .range(_, _):
-                                TextField("Start Port", text: Binding(
-                                    get: { localPort == 0 ? "" : String(localPort) },
-                                    set: {
-                                        self.localPort = UInt16($0) ?? 0
-                                    }
-                                ))
-                                .frame(minWidth: 30, maxWidth: 60)
-                                .textFieldStyle(.roundedBorder)
-                                .focused($localPortInFocus)
-
-                                Text("~")
-
-                                Text(String(localPortEnd))
-                            }
+                                )
+                            )
+                            .frame(minWidth: 30, maxWidth: 60)
+                            .textFieldStyle(.roundedBorder)
+                            .focused($localPortInFocus)
                         }
                         .transition(.move(edge: .leading).combined(with: .opacity))
                     }
@@ -393,34 +292,18 @@ struct ForwardedItemRow: View {
         }
     }
 
-    func isValid () -> Bool {
+    func isValid() -> Bool {
         if address == "" {
             return false
         }
 
-        switch remotePort {
-        case let .single(port):
-            if port == 0 {
-                return false
-            }
+        if remotePort.value == 0 {
+            return false
+        }
 
-            if let localPort = localPort {
-                if localPort == 0 {
-                    return false
-                }
-            }
-
-        case let .range(startPort, endPort):
-            if startPort == 0 || endPort == 0 {
+        if let localPort = localPort {
+            if localPort == 0 {
                 return false
-            }
-            if endPort <= startPort {
-                return false
-            }
-            if let localPort {
-                if UInt16.max - (endPort - startPort) < localPort {
-                    return false
-                }
             }
         }
 
@@ -432,7 +315,8 @@ struct ForwardedItemRow: View {
             return true
         }
 
-        return item!.address != address || item!.remotePort != remotePort || item!.localPort != localPort || item!.allowLan != allowLan
+        return item!.address != address || item!.remotePort != remotePort
+            || item!.localPort != localPort || item!.allowLan != allowLan
     }
 
     func submit() {
@@ -464,12 +348,19 @@ struct ForwardedItemRow: View {
 #Preview {
     Group {
         ForwardedItemRow()
-        ForwardedItemRow(item: ForwardedItemInfo(address: "192.168.1.1", remotePort: .single(port: 1234)))
-        ForwardedItemRow(item: ForwardedItemInfo(address: "192.168.1.1", remotePort: .single(port: 1234), localPort: 4321))
-        ForwardedItemRow(item: ForwardedItemInfo(address: "192.168.1.1", remotePort: .range(start: 1000, end: 2000)))
-        ForwardedItemRow(item: ForwardedItemInfo(address: "192.168.1.1", remotePort: .range(start: 1000, end: 2000), localPort: 3000))
-        ForwardedItemRow(item: ForwardedItemInfo(address: "192.168.1.1", remotePort: .single(port: 1234)), errors: [IpfError.addrInUse])
-        ForwardedItemRow(item: ForwardedItemInfo(address: "192.168.1.1", remotePort: .single(port: 1234)), errors: [IpfError.addrInUse, IpfError.invalidLocalPortStart])
-        ForwardedItemRow(item: ForwardedItemInfo(address: "www.google.com", remotePort: .single(port: 80), localPort: 8080))
+        ForwardedItemRow(
+            item: ForwardedItemInfo(address: "192.168.1.1", remotePort: .single(port: 1234)))
+        ForwardedItemRow(
+            item: ForwardedItemInfo(
+                address: "192.168.1.1", remotePort: .single(port: 1234), localPort: 4321))
+        ForwardedItemRow(
+            item: ForwardedItemInfo(address: "192.168.1.1", remotePort: .single(port: 1234)),
+            errors: [IpfError.addrInUse])
+        ForwardedItemRow(
+            item: ForwardedItemInfo(address: "192.168.1.1", remotePort: .single(port: 1234)),
+            errors: [IpfError.addrInUse, IpfError.tooManyOpenFiles])
+        ForwardedItemRow(
+            item: ForwardedItemInfo(
+                address: "www.google.com", remotePort: .single(port: 80), localPort: 8080))
     }
 }

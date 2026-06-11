@@ -9,15 +9,6 @@ signed char ipf_forward(
 	_Bool allow_lan
 );
 
-/** Forward a range of TCP ports to another IP address. */
-signed char ipf_forward_range(
-	const char *ip,
-	unsigned short int remote_port_start,
-	unsigned short int remote_port_end,
-	unsigned short int local_port_start,
-	_Bool allow_lan
-);
-
 /** Cancel a forward rule. */
 signed char ipf_cancel_forward(signed char forward_rule_id);
 

@@ -4,43 +4,52 @@ import Libipf
 
 enum Port: Codable, Equatable {
     case single(port: UInt16)
-    case range(start: UInt16, end: UInt16)
 
-    func isSingle() -> Bool {
+    var value: UInt16 {
         switch self {
-        case .single(port: _):
-            return true
-        case .range(start: _, end: _):
-            return false
+        case .single(let port):
+            return port
         }
     }
 
-    func isRange() -> Bool {
-        switch self {
-        case .single(port: _):
-            return false
-        case .range(start: _, end: _):
-            return true
-        }
+    private enum CodingKeys: String, CodingKey {
+        case single
+        case range
     }
 
-    static func ==(lhs: Port, rhs: Port) -> Bool {
-        switch lhs {
-        case let .single(lPort):
-            switch rhs {
-            case let .single(rPort):
-                return lPort == rPort
-            case .range(_, _):
-                return false
-            }
-        case let .range(lStart, lEnd):
-            switch rhs {
-            case .single(_):
-                return false
-            case let .range(rStart, rEnd):
-                return lStart == rStart && lEnd == rEnd
-            }
+    private enum SingleCodingKeys: String, CodingKey {
+        case port
+    }
+
+    private enum RangeCodingKeys: String, CodingKey {
+        case start
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+
+        if container.contains(.single) {
+            let single = try container.nestedContainer(keyedBy: SingleCodingKeys.self, forKey: .single)
+            self = .single(port: try single.decode(UInt16.self, forKey: .port))
+            return
         }
+
+        if container.contains(.range) {
+            let range = try container.nestedContainer(keyedBy: RangeCodingKeys.self, forKey: .range)
+            self = .single(port: try range.decode(UInt16.self, forKey: .start))
+            return
+        }
+
+        throw DecodingError.dataCorrupted(
+            DecodingError.Context(
+                codingPath: decoder.codingPath, debugDescription: "Expected a single port.")
+        )
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        var single = container.nestedContainer(keyedBy: SingleCodingKeys.self, forKey: .single)
+        try single.encode(value, forKey: .port)
     }
 }
 
@@ -95,9 +104,7 @@ class ForwardedItem: DisplayableForwardedItem, Identifiable {
     private var hasDeinit = false
 
     nonisolated var id: Int8 {
-        get {
-            return self.forwardRuleId
-        }
+        return self.forwardRuleId
     }
 
     init(
@@ -125,36 +132,6 @@ class ForwardedItem: DisplayableForwardedItem, Identifiable {
 
     init(
         address: String,
-        remotePorts: (UInt16, UInt16),
-        localStartPort: UInt16?,
-        allowLan: Bool = false
-    ) throws {
-        self.address = address
-        self.remotePort = .range(start: remotePorts.0, end: remotePorts.1)
-        self.localPort = localStartPort
-        self.allowLan = allowLan
-
-        if let localStartPort {
-            self.forwardRuleId = try forwardRange(
-                address: address,
-                remotePortStart: remotePorts.0,
-                remotePortEnd: remotePorts.1,
-                localPortStart: localStartPort,
-                allowLan: allowLan
-            )
-        } else {
-            self.forwardRuleId = try forwardRange(
-                address: address,
-                remotePortStart: remotePorts.0,
-                remotePortEnd: remotePorts.1,
-                localPortStart: remotePorts.0,
-                allowLan: allowLan
-            )
-        }
-    }
-
-    init(
-        address: String,
         remotePort: Port,
         localPort: UInt16? = nil,
         allowLan: Bool = false
@@ -164,43 +141,12 @@ class ForwardedItem: DisplayableForwardedItem, Identifiable {
         self.localPort = localPort
         self.allowLan = allowLan
 
-        switch remotePort {
-        case let .single(port):
-            if let localPort {
-                self.forwardRuleId = try forward(
-                    address: address,
-                    remotePort: port,
-                    localPort: localPort,
-                    allowLan: allowLan
-                )
-            } else {
-                self.forwardRuleId = try forward(
-                    address: address,
-                    remotePort: port,
-                    localPort: port,
-                    allowLan: allowLan
-                )
-            }
-
-        case let .range(startPort, endPort):
-            if let localPort {
-                self.forwardRuleId = try forwardRange(
-                    address: address,
-                    remotePortStart: startPort,
-                    remotePortEnd: endPort,
-                    localPortStart: localPort,
-                    allowLan: allowLan
-                )
-            } else {
-                self.forwardRuleId = try forwardRange(
-                    address: address,
-                    remotePortStart: startPort,
-                    remotePortEnd: endPort,
-                    localPortStart: startPort,
-                    allowLan: allowLan
-                )
-            }
-        }
+        self.forwardRuleId = try forward(
+            address: address,
+            remotePort: remotePort.value,
+            localPort: localPort ?? remotePort.value,
+            allowLan: allowLan
+        )
     }
 
     init(item: DisplayableForwardedItem) throws {
@@ -209,43 +155,12 @@ class ForwardedItem: DisplayableForwardedItem, Identifiable {
         self.localPort = item.localPort
         self.allowLan = item.allowLan
 
-        switch remotePort {
-        case let .single(port):
-            if let localPort {
-                self.forwardRuleId = try forward(
-                    address: address,
-                    remotePort: port,
-                    localPort: localPort,
-                    allowLan: allowLan
-                )
-            } else {
-                self.forwardRuleId = try forward(
-                    address: address,
-                    remotePort: port,
-                    localPort: port,
-                    allowLan: allowLan
-                )
-            }
-
-        case let .range(startPort, endPort):
-            if let localPort {
-                self.forwardRuleId = try forwardRange(
-                    address: address,
-                    remotePortStart: startPort,
-                    remotePortEnd: endPort,
-                    localPortStart: localPort,
-                    allowLan: allowLan
-                )
-            } else {
-                self.forwardRuleId = try forwardRange(
-                    address: address,
-                    remotePortStart: startPort,
-                    remotePortEnd: endPort,
-                    localPortStart: startPort,
-                    allowLan: allowLan
-                )
-            }
-        }
+        self.forwardRuleId = try forward(
+            address: address,
+            remotePort: remotePort.value,
+            localPort: localPort ?? remotePort.value,
+            allowLan: allowLan
+        )
     }
 
     deinit {

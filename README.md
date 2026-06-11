@@ -1,6 +1,6 @@
 # iPortForwarder
 
-A native macOS app built using SwiftUI and Rust, enables you to forward multiple remote ports to your local ports.
+A native macOS app built using SwiftUI and Rust, enabling you to forward remote ports to local ports.
 
 ## Screenshot
 

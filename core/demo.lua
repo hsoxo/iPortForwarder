@@ -32,17 +32,6 @@ local function forward(address, remote_port, local_port, allow_lan)
 	return ipf.ipf_forward(ffi.new('char [?]', #address + 1, address), remote_port, local_port, allow_lan)
 end
 
----Forward address and a range of ports
----@param address string
----@param remote_port_start number
----@param remote_port_end number
----@param local_port_start number
----@param allow_lan boolean
----@return number forward_rule_id
-local function forward_range(address, remote_port_start, remote_port_end, local_port_start, allow_lan)
-	return ipf.ipf_forward_range(ffi.new('char [?]', #address + 1, address), remote_port_start, remote_port_end, local_port_start, allow_lan)
-end
-
 ---Cancel forward
 ---@param forward_rule_id number
 ---@return number forward_rule_id
@@ -59,8 +48,6 @@ local function error_message(error)
 		[-10] = 'Invalid string',
 		[-11] = 'Too many rules',
 		[-12] = 'Invalid rule ID',
-		[-13] = 'Invalid local start port',
-		[-14] = 'Invalid remote end port',
 		[-15] = 'Error handler is already registered',
 		[-51] = 'Permission denied',
 		[-52] = 'Address in use',
@@ -102,25 +89,6 @@ local function forward_single_port(ip)
 	return forward(ip, port, port, true)
 end
 
----Start a range of ports forwarding
----@param ip string
----@return number forward_rule_id
-local function forward_a_range_of_ports(ip)
-	print 'Please input the start port you want to forward:'
-	local start_port = tonumber(io.read())
-	print 'Please input the end port you want to forward:'
-	local end_port = tonumber(io.read())
-	if start_port == nil or start_port <= 0 or start_port > 65535 then
-		print 'Start port is invalid.'
-		os.exit(1)
-	end
-	if end_port == nil or end_port <= 0 or end_port > 65535 or end_port <= start_port then
-		print 'End port is invalid.'
-		os.exit(1)
-	end
-	return forward_range(ip, start_port, end_port, start_port, true)
-end
-
 ipf.ipf_register_error_handler(ipf_error_handler)
 
 print 'Please input IP address you want to forward:'
@@ -136,20 +104,7 @@ end
 print 'Please input how long (in seconds, empty means forever) you want to forward:'
 local time = tonumber(io.read())
 
----@type number
-local forward_rule_id
-
-print 'Do you want to forward a single port or a range of ports? (single/range)'
-local forward_type = io.read()
-
-if forward_type == 'single' then
-	forward_rule_id = forward_single_port(ip)
-elseif forward_type == 'range' then
-	forward_rule_id = forward_a_range_of_ports(ip)
-else
-	print('Unknown forward type (`' .. forward_type .. '`), must be `single` or `range`.')
-	os.exit(1)
-end
+local forward_rule_id = forward_single_port(ip)
 
 if forward_rule_id < 0 then
 	print('Error: ' .. error_message(forward_rule_id))

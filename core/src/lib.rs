@@ -24,7 +24,7 @@ static AVAILABLE_RULE_IDS: LazyLock<Mutex<Vec<i8>>> = LazyLock::new(|| {
     Mutex::new(pool)
 });
 
-static RUNNING_RULES: LazyLock<Mutex<HashMap<i8, ForwardRuleHandler>>> =
+static RUNNING_RULES: LazyLock<Mutex<HashMap<i8, JoinHandle<()>>>> =
     LazyLock::new(|| Mutex::new(HashMap::with_capacity(128)));
 
 static ERROR_HANDLER: OnceLock<extern "C" fn(i8, i8)> = OnceLock::new();
@@ -39,34 +39,6 @@ fn get_new_rule_id() -> Option<i8> {
 #[inline]
 fn release_rule_id(rule_id: i8) {
     AVAILABLE_RULE_IDS.lock().unwrap().push(rule_id);
-}
-
-enum ForwardRuleHandler {
-    Single(JoinHandle<()>),
-    Multiple(Vec<JoinHandle<()>>),
-}
-impl ForwardRuleHandler {
-    pub fn single(handler: JoinHandle<()>) -> Self {
-        Self::Single(handler)
-    }
-
-    pub fn multiple(handlers: Vec<JoinHandle<()>>) -> Self {
-        Self::Multiple(handlers)
-    }
-
-    pub fn abort(self) {
-        match self {
-            Self::Single(handler) => {
-                handler.abort();
-            }
-
-            Self::Multiple(handlers) => {
-                for handler in handlers {
-                    handler.abort();
-                }
-            }
-        }
-    }
 }
 
 /// Check if an IP address is valid.
@@ -132,10 +104,7 @@ pub extern "C" fn ipf_forward(
         }
     });
 
-    RUNNING_RULES
-        .lock()
-        .unwrap()
-        .insert(rule_id, ForwardRuleHandler::single(join_handler));
+    RUNNING_RULES.lock().unwrap().insert(rule_id, join_handler);
 
     rule_id
 }
@@ -169,79 +138,6 @@ async fn run_accept_loop(rule_id: i8, listener: TcpListener, target: SocketAddr)
             }
         }
     }
-}
-
-/// Forward a range of TCP ports to another IP address.
-#[no_mangle]
-#[allow(clippy::not_unsafe_ptr_arg_deref)]
-pub extern "C" fn ipf_forward_range(
-    address_c_string: *const c_char,
-    remote_port_start: u16,
-    remote_port_end: u16,
-    local_port_start: u16,
-    allow_lan: bool,
-) -> i8 {
-    if remote_port_end < remote_port_start {
-        return Error::InvalidRemotePortEnd as i8;
-    }
-
-    if u16::MAX - (remote_port_end - remote_port_start) < local_port_start {
-        return Error::InvalidLocalPortStart as i8;
-    }
-
-    let addr_str = unsafe {
-        match CStr::from_ptr(address_c_string).to_str() {
-            Ok(ip_str) => ip_str,
-            Err(_) => return Error::InvalidString as i8,
-        }
-    };
-    let ip = match addr_str.parse::<IpAddr>() {
-        Ok(ip) => ip,
-        Err(_) => match (addr_str, 0).to_socket_addrs() {
-            Ok(mut socket_addrs) => match socket_addrs.next() {
-                Some(addr) => addr.ip(),
-                None => return Error::AddressCantBeResolved as i8,
-            },
-            Err(_) => return Error::AddressCantBeResolved as i8,
-        },
-    };
-
-    let rule_id = match get_new_rule_id() {
-        Some(id) => id,
-        None => return Error::TooManyRules as i8,
-    };
-
-    let bind_ip = IpAddr::V4(if allow_lan {
-        Ipv4Addr::UNSPECIFIED
-    } else {
-        Ipv4Addr::LOCALHOST
-    });
-
-    let join_handlers = (remote_port_start..=remote_port_end)
-        .enumerate()
-        .map(move |(index, remote_port)| {
-            let local_port = local_port_start + index as u16;
-            RT.spawn(async move {
-                match TcpListener::bind(SocketAddr::new(bind_ip, local_port)).await {
-                    Ok(listener) => {
-                        run_accept_loop(rule_id, listener, SocketAddr::new(ip, remote_port)).await
-                    }
-                    Err(error) => {
-                        if let Some(error_handler) = ERROR_HANDLER.get() {
-                            error_handler(rule_id, Error::from(error) as i8);
-                        }
-                    }
-                }
-            })
-        })
-        .collect();
-
-    RUNNING_RULES
-        .lock()
-        .unwrap()
-        .insert(rule_id, ForwardRuleHandler::multiple(join_handlers));
-
-    rule_id
 }
 
 /// Cancel a forward rule.

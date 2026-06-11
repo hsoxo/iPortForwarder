@@ -16,13 +16,6 @@ pub enum Error {
     /// The rule ID is invalid.
     InvalidRuleId = -12,
 
-    /// The local port start is invalid,
-    /// which will make the local port end greater than 65535.
-    InvalidLocalPortStart = -13,
-
-    /// The remote port end is invalid.
-    InvalidRemotePortEnd = -14,
-
     /// The error handler has already been registered.
     HandlerAlreadyRegistered = -15,
 
